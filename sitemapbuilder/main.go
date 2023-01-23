@@ -1,31 +1,86 @@
 package main
 
 import (
+	"encoding/xml"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	link "sitemapbuilder/parse"
 	"strings"
 )
 
+const xmlns = "http://www.sitemaps.org/schemas/sitemap/0.9"
+
+type loc struct {
+	Value string `xml:"loc"`
+}
+
+type urlSet struct {
+	Urls  []loc  `xml:"url"`
+	Xmlns string `xml:"xmlns,attr"`
+}
+
 func main() {
 	urlFlag := flag.String("url", "https://gophercises.com", "url to send request to")
+	maxDepth := flag.Int("depth", 10, "max depth to traverse")
 	flag.Parse()
 
-	fmt.Println(*urlFlag)
-
-	pages := get(*urlFlag)
-	for _, page := range pages {
-		fmt.Println(page)
+	pages := bfs(*urlFlag, *maxDepth)
+	toXml := urlSet{
+		Xmlns: xmlns,
 	}
+	for _, page := range pages {
+		toXml.Urls = append(toXml.Urls, loc{page})
+	}
+
+	fmt.Print(xml.Header)
+	enc := xml.NewEncoder(os.Stdout)
+	enc.Indent("", "  ")
+	if err := enc.Encode(toXml); err != nil {
+		panic(err)
+	}
+	fmt.Println()
+}
+
+type empty struct{}
+
+func bfs(urlStr string, maxDepth int) []string {
+	seen := make(map[string]empty)
+	var q map[string]empty
+	nq := map[string]empty{
+		urlStr: struct{}{},
+	}
+	for i := 0; i <= maxDepth; i++ {
+		q, nq = nq, make(map[string]empty)
+		if len(q) == 0 {
+			break
+		}
+		for url, _ := range q {
+			if _, ok := seen[url]; ok {
+				continue
+			}
+			seen[url] = empty{}
+			for _, link := range get(url) {
+				if _, ok := seen[link]; !ok {
+					nq[link] = empty{}
+				}
+			}
+		}
+	}
+	ret := make([]string, 0, len(seen))
+	for url, _ := range seen {
+		ret = append(ret, url)
+	}
+	return ret
 }
 
 func get(urlStr string) []string {
 	resp, err := http.Get(urlStr)
 	if err != nil {
-		panic(err)
+		return []string{}
 	}
 	defer resp.Body.Close()
 
