@@ -42,6 +42,32 @@ func CreateTask(task string) (int, error) { // create task
 	return id, nil // return id
 }
 
+func AllTasks() ([]Task, error) { // get all tasks
+	var tasks []Task // make task slice
+	err := db.View(func(tx *bolt.Tx) error { // view database
+		b := tx.Bucket(taskBucket) // get bucket
+		c := b.Cursor() // get cursor
+		for k, v := c.First(); k != nil; k, v = c.Next() { // loop through cursor
+			tasks = append(tasks, Task{ // append task
+				Key:   btoi(k), // convert to int
+				Value: string(v), // convert to string
+			})
+		}
+		return nil // return nil
+	})
+	if err != nil { // if error is not nil
+		return nil, err // return error
+	}
+	return tasks, nil // return tasks
+}
+
+func DeleteTask(key int) error { // delete task
+	return db.Update(func(tx *bolt.Tx) error { // update database
+		b := tx.Bucket(taskBucket) // get bucket
+		return b.Delete(itob(key)) // delete task
+	})
+}
+
 func itob(v int) []byte { // convert int to byte
 	b := make([]byte, 8) // make byte with length 8
 	binary.BigEndian.PutUint64(b, uint64(v)) // put uint64
